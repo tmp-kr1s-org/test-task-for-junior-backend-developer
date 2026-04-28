@@ -23,17 +23,50 @@ import (
 
 // stubUsecase is a hand-rolled mock of taskusecase.Usecase configured per test.
 type stubUsecase struct {
-	createFn  func(ctx context.Context, in taskusecase.CreateInput) (*taskdomain.Task, error)
-	getFn     func(ctx context.Context, id int64) (*taskdomain.Task, error)
-	updateFn  func(ctx context.Context, id int64, in taskusecase.UpdateInput) (*taskdomain.Task, error)
-	deleteFn  func(ctx context.Context, id int64) error
-	listFn    func(ctx context.Context) ([]taskdomain.Task, error)
+	createFn func(ctx context.Context, in taskusecase.CreateInput) (*taskdomain.Task, error)
+	getFn    func(ctx context.Context, id int64) (*taskdomain.Task, error)
+	updateFn func(ctx context.Context, id int64, in taskusecase.UpdateInput) (*taskdomain.Task, error)
+	deleteFn func(ctx context.Context, id int64) error
+	listFn   func(ctx context.Context) ([]taskdomain.Task, error)
+
+	listOccurrencesFn func(ctx context.Context, from, to time.Time) ([]taskdomain.Occurrence, error)
+	upsertOverrideFn  func(ctx context.Context, taskID int64, date time.Time, in taskusecase.OverrideInput) error
+	cancelFn          func(ctx context.Context, taskID int64, date time.Time) error
+	forkFn            func(ctx context.Context, taskID int64, fromDate time.Time, in taskusecase.UpdateInput, rule *taskusecase.RepeatInput) (*taskdomain.Task, error)
 
 	createCalls atomic.Int64
 	getCalls    atomic.Int64
 	updateCalls atomic.Int64
 	deleteCalls atomic.Int64
 	listCalls   atomic.Int64
+}
+
+func (s *stubUsecase) ListOccurrences(ctx context.Context, from, to time.Time) ([]taskdomain.Occurrence, error) {
+	if s.listOccurrencesFn == nil {
+		return nil, errors.New("listOccurrencesFn not set")
+	}
+	return s.listOccurrencesFn(ctx, from, to)
+}
+
+func (s *stubUsecase) UpsertOccurrenceOverride(ctx context.Context, taskID int64, date time.Time, in taskusecase.OverrideInput) error {
+	if s.upsertOverrideFn == nil {
+		return errors.New("upsertOverrideFn not set")
+	}
+	return s.upsertOverrideFn(ctx, taskID, date, in)
+}
+
+func (s *stubUsecase) CancelOccurrence(ctx context.Context, taskID int64, date time.Time) error {
+	if s.cancelFn == nil {
+		return errors.New("cancelFn not set")
+	}
+	return s.cancelFn(ctx, taskID, date)
+}
+
+func (s *stubUsecase) ForkSeries(ctx context.Context, taskID int64, fromDate time.Time, in taskusecase.UpdateInput, rule *taskusecase.RepeatInput) (*taskdomain.Task, error) {
+	if s.forkFn == nil {
+		return nil, errors.New("forkFn not set")
+	}
+	return s.forkFn(ctx, taskID, fromDate, in, rule)
 }
 
 func (s *stubUsecase) Create(ctx context.Context, in taskusecase.CreateInput) (*taskdomain.Task, error) {

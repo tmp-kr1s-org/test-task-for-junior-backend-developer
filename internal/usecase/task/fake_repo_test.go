@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"time"
 
 	taskdomain "example.com/taskservice/internal/domain/task"
 )
@@ -14,21 +15,29 @@ type fakeRepo struct {
 	nextID int64
 	items  map[int64]taskdomain.Task
 
-	// hooks let tests force errors from any method.
-	createErr  error
-	getErr     error
-	updateErr  error
-	deleteErr  error
-	listErr    error
+	nextRepeatID int64
+	rules        map[int64]taskdomain.RepeatRule       // key: repeat_id
+	rulesByTask  map[int64]int64                       // task_id -> repeat_id
+	overrides    map[int64]map[string]taskdomain.Override // repeat_id -> dateKey -> override
 
-	// captured args for assertions.
+	createErr error
+	getErr    error
+	updateErr error
+	deleteErr error
+	listErr   error
+
 	lastCreated *taskdomain.Task
 	lastUpdated *taskdomain.Task
 	deletedIDs  []int64
 }
 
 func newFakeRepo() *fakeRepo {
-	return &fakeRepo{items: map[int64]taskdomain.Task{}}
+	return &fakeRepo{
+		items:       map[int64]taskdomain.Task{},
+		rules:       map[int64]taskdomain.RepeatRule{},
+		rulesByTask: map[int64]int64{},
+		overrides:   map[int64]map[string]taskdomain.Override{},
+	}
 }
 
 func (r *fakeRepo) Create(_ context.Context, t *taskdomain.Task) (*taskdomain.Task, error) {
@@ -71,7 +80,6 @@ func (r *fakeRepo) Update(_ context.Context, t *taskdomain.Task) (*taskdomain.Ta
 		return nil, taskdomain.ErrNotFound
 	}
 	updated := *t
-	// preserve created_at as a real repo would.
 	updated.CreatedAt = existing.CreatedAt
 	r.items[t.ID] = updated
 	r.lastUpdated = &updated
@@ -104,6 +112,109 @@ func (r *fakeRepo) List(_ context.Context) ([]taskdomain.Task, error) {
 		out = append(out, v)
 	}
 	return out, nil
+}
+
+func (r *fakeRepo) CreateWithRepeat(ctx context.Context, t *taskdomain.Task, rule *taskdomain.RepeatRule) (*taskdomain.Task, *taskdomain.RepeatRule, error) {
+	created, err := r.Create(ctx, t)
+	if err != nil {
+		return nil, nil, err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.nextRepeatID++
+	cp := *rule
+	cp.ID = r.nextRepeatID
+	cp.TaskID = created.ID
+	r.rules[cp.ID] = cp
+	r.rulesByTask[created.ID] = cp.ID
+	out := cp
+	return created, &out, nil
+}
+
+func (r *fakeRepo) GetSeriesByTaskID(_ context.Context, taskID int64) (*Series, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	t, ok := r.items[taskID]
+	if !ok {
+		return nil, taskdomain.ErrNotFound
+	}
+	ser := &Series{Task: t}
+	if rid, has := r.rulesByTask[taskID]; has {
+		rule := r.rules[rid]
+		ser.Rule = &rule
+	}
+	return ser, nil
+}
+
+func (r *fakeRepo) ListSeries(_ context.Context, from, to *time.Time) ([]Series, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]Series, 0, len(r.items))
+	for _, t := range r.items {
+		ser := Series{Task: t}
+		if rid, has := r.rulesByTask[t.ID]; has {
+			rule := r.rules[rid]
+			ser.Rule = &rule
+		}
+		out = append(out, ser)
+	}
+	_ = from
+	_ = to
+	return out, nil
+}
+
+func (r *fakeRepo) LoadOverrides(_ context.Context, repeatIDs []int64, from, to time.Time) (map[int64]map[string]taskdomain.Override, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := map[int64]map[string]taskdomain.Override{}
+	for _, rid := range repeatIDs {
+		entries := r.overrides[rid]
+		if len(entries) == 0 {
+			continue
+		}
+		bucket := map[string]taskdomain.Override{}
+		for k, v := range entries {
+			d := v.Date
+			if (d.Equal(from) || d.After(from)) && (d.Equal(to) || d.Before(to)) {
+				bucket[k] = v
+			}
+		}
+		if len(bucket) > 0 {
+			out[rid] = bucket
+		}
+	}
+	return out, nil
+}
+
+func (r *fakeRepo) UpsertOverride(_ context.Context, ov taskdomain.Override) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.rules[ov.RepeatID]; !ok {
+		return taskdomain.ErrNotFound
+	}
+	bucket, ok := r.overrides[ov.RepeatID]
+	if !ok {
+		bucket = map[string]taskdomain.Override{}
+		r.overrides[ov.RepeatID] = bucket
+	}
+	bucket[DateKey(ov.Date)] = ov
+	return nil
+}
+
+func (r *fakeRepo) ForkSeries(ctx context.Context, taskID int64, fromDate time.Time, newTask *taskdomain.Task, newRule *taskdomain.RepeatRule) (*taskdomain.Task, *taskdomain.RepeatRule, error) {
+	r.mu.Lock()
+	rid, ok := r.rulesByTask[taskID]
+	if !ok {
+		r.mu.Unlock()
+		return nil, nil, taskdomain.ErrNotFound
+	}
+	old := r.rules[rid]
+	end := fromDate.AddDate(0, 0, -1)
+	old.EndDate = &end
+	r.rules[rid] = old
+	r.mu.Unlock()
+
+	return r.CreateWithRepeat(ctx, newTask, newRule)
 }
 
 // errBoom is a sentinel for "infrastructure failed".
