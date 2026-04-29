@@ -1,8 +1,10 @@
 package task
 
 import (
+	"cmp"
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -143,6 +145,15 @@ func (s *Service) ListOccurrences(ctx context.Context, from, to time.Time) ([]ta
 		merged := Merge(ser.Task, ser.Rule.ID, dates, overrides[ser.Rule.ID])
 		out = append(out, merged...)
 	}
+	slices.SortFunc(out, func(a, b taskdomain.Occurrence) int {
+		if c := a.Date.Compare(b.Date); c != 0 {
+			return c
+		}
+		if c := compareSchedTime(a.ScheduledAt, b.ScheduledAt); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.ID, b.ID)
+	})
 	return out, nil
 }
 
@@ -231,6 +242,19 @@ func (s *Service) ForkSeries(ctx context.Context, taskID int64, fromDate time.Ti
 		return nil, err
 	}
 	return created, nil
+}
+
+func compareSchedTime(a, b *time.Time) int {
+	switch {
+	case a == nil && b == nil:
+		return 0
+	case a == nil:
+		return 1
+	case b == nil:
+		return -1
+	default:
+		return a.Compare(*b)
+	}
 }
 
 func buildRule(in *RepeatInput, scheduledAt *time.Time) (*taskdomain.RepeatRule, error) {

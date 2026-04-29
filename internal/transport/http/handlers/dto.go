@@ -1,11 +1,34 @@
 package handlers
 
 import (
+	"errors"
+	"strings"
 	"time"
 
 	taskdomain "example.com/taskservice/internal/domain/task"
 	taskusecase "example.com/taskservice/internal/usecase/task"
 )
+
+// jsonDate accepts a YYYY-MM-DD string in JSON. time.Time's default unmarshal
+// demands RFC3339, but the contract advertises format=date.
+type jsonDate struct{ time.Time }
+
+func (d *jsonDate) UnmarshalJSON(b []byte) error {
+	s := strings.Trim(string(b), `"`)
+	if s == "" || s == "null" {
+		return nil
+	}
+	t, err := time.Parse("2006-01-02", s)
+	if err != nil {
+		return errors.New("invalid date (want YYYY-MM-DD)")
+	}
+	d.Time = t
+	return nil
+}
+
+func (d jsonDate) MarshalJSON() ([]byte, error) {
+	return []byte(`"` + d.Time.Format("2006-01-02") + `"`), nil
+}
 
 type taskMutationDTO struct {
 	Title       string            `json:"title"`
@@ -27,12 +50,12 @@ type taskDTO struct {
 
 type repeatRuleDTO struct {
 	Type          taskdomain.RuleType `json:"type"`
-	StartDate     *time.Time          `json:"start_date,omitempty"`
-	EndDate       *time.Time          `json:"end_date,omitempty"`
+	StartDate     *jsonDate           `json:"start_date,omitempty"`
+	EndDate       *jsonDate           `json:"end_date,omitempty"`
 	IntervalDays  *int                `json:"interval_days,omitempty"`
 	Weekdays      []int               `json:"weekdays,omitempty"`
 	MonthDays     []int               `json:"month_days,omitempty"`
-	SpecificDates []time.Time         `json:"specific_dates,omitempty"`
+	SpecificDates []jsonDate          `json:"specific_dates,omitempty"`
 }
 
 type occurrenceDTO struct {
@@ -81,15 +104,23 @@ func (d *repeatRuleDTO) toInput(scheduledAt *time.Time) *taskusecase.RepeatInput
 		return nil
 	}
 	in := &taskusecase.RepeatInput{
-		Type:          d.Type,
-		EndDate:       d.EndDate,
-		IntervalDays:  d.IntervalDays,
-		Weekdays:      d.Weekdays,
-		MonthDays:     d.MonthDays,
-		SpecificDates: d.SpecificDates,
+		Type:         d.Type,
+		IntervalDays: d.IntervalDays,
+		Weekdays:     d.Weekdays,
+		MonthDays:    d.MonthDays,
+	}
+	if d.EndDate != nil {
+		end := d.EndDate.Time
+		in.EndDate = &end
+	}
+	if len(d.SpecificDates) > 0 {
+		in.SpecificDates = make([]time.Time, len(d.SpecificDates))
+		for i, sd := range d.SpecificDates {
+			in.SpecificDates[i] = sd.Time
+		}
 	}
 	if d.StartDate != nil {
-		in.StartDate = *d.StartDate
+		in.StartDate = d.StartDate.Time
 	} else if scheduledAt != nil {
 		in.StartDate = *scheduledAt
 	}

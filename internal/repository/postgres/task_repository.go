@@ -100,7 +100,7 @@ func (r *Repository) List(ctx context.Context) ([]taskdomain.Task, error) {
 	const query = `
 		SELECT id, title, description, status, scheduled_at, created_at, updated_at
 		FROM tasks
-		ORDER BY id DESC
+		ORDER BY scheduled_at ASC NULLS LAST, id ASC
 	`
 
 	rows, err := r.pool.Query(ctx, query)

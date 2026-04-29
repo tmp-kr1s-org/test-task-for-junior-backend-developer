@@ -73,9 +73,9 @@ func (r *Repository) ListSeries(ctx context.Context, from, to *time.Time) ([]tas
 			(tr.id IS NOT NULL
 			 AND tr.start_date <= $2::date
 			 AND (tr.end_date IS NULL OR tr.end_date >= $1::date))
-		ORDER BY t.id DESC
+		ORDER BY t.scheduled_at ASC NULLS LAST, t.id ASC
 	`
-	const allQuery = baseQuery + ` ORDER BY t.id DESC`
+	const allQuery = baseQuery + ` ORDER BY t.scheduled_at ASC NULLS LAST, t.id ASC`
 
 	var (
 		rows pgx.Rows

@@ -54,6 +54,9 @@ func (r *RepeatRule) Validate() error {
 		if r.IntervalDays == nil || *r.IntervalDays < 1 {
 			return ErrInvalidRule
 		}
+		if len(r.Weekdays) > 0 || len(r.MonthDays) > 0 || len(r.SpecificDates) > 0 {
+			return ErrInvalidRule
+		}
 	case RuleWeekly:
 		if len(r.Weekdays) == 0 {
 			return ErrInvalidRule
@@ -62,6 +65,9 @@ func (r *RepeatRule) Validate() error {
 			if d < 1 || d > 7 {
 				return ErrInvalidRule
 			}
+		}
+		if r.IntervalDays != nil || len(r.MonthDays) > 0 || len(r.SpecificDates) > 0 {
+			return ErrInvalidRule
 		}
 	case RuleMonthly:
 		if len(r.MonthDays) == 0 {
@@ -72,12 +78,20 @@ func (r *RepeatRule) Validate() error {
 				return ErrInvalidRule
 			}
 		}
+		if r.IntervalDays != nil || len(r.Weekdays) > 0 || len(r.SpecificDates) > 0 {
+			return ErrInvalidRule
+		}
 	case RuleSpecificDates:
 		if len(r.SpecificDates) == 0 {
 			return ErrInvalidRule
 		}
+		if r.IntervalDays != nil || len(r.Weekdays) > 0 || len(r.MonthDays) > 0 {
+			return ErrInvalidRule
+		}
 	case RuleEvenDays, RuleOddDays:
-		// no extra parameters
+		if r.IntervalDays != nil || len(r.Weekdays) > 0 || len(r.MonthDays) > 0 || len(r.SpecificDates) > 0 {
+			return ErrInvalidRule
+		}
 	}
 	return nil
 }
