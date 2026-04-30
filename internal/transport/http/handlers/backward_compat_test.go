@@ -14,6 +14,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"testing"
 	"time"
 
@@ -183,7 +184,7 @@ func TestBackwardCompat_List_ResponseShape(t *testing.T) {
 		t.Fatalf("want 2 items, got %d", len(arr))
 	}
 	for i, item := range arr {
-		t.Run("item-"+itoa(i), func(t *testing.T) {
+		t.Run("item-"+strconv.Itoa(i), func(t *testing.T) {
 			assertTaskShape(t, item)
 		})
 	}
@@ -253,25 +254,3 @@ func TestBackwardCompat_OmittingOptionalFieldsOnCreate(t *testing.T) {
 	}
 }
 
-// itoa is a tiny helper to avoid importing strconv just for subtest names.
-func itoa(i int) string {
-	if i == 0 {
-		return "0"
-	}
-	var buf [20]byte
-	pos := len(buf)
-	neg := i < 0
-	if neg {
-		i = -i
-	}
-	for i > 0 {
-		pos--
-		buf[pos] = byte('0' + i%10)
-		i /= 10
-	}
-	if neg {
-		pos--
-		buf[pos] = '-'
-	}
-	return string(buf[pos:])
-}

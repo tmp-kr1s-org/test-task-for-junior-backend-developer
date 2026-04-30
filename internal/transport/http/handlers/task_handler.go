@@ -50,13 +50,13 @@ func (h *TaskHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	task, err := h.usecase.GetByID(r.Context(), id)
+	series, err := h.usecase.GetSeriesByID(r.Context(), id)
 	if err != nil {
 		writeUsecaseError(w, err)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, newTaskDTO(task))
+	writeJSON(w, http.StatusOK, newSeriesDTO(series))
 }
 
 func (h *TaskHandler) Update(w http.ResponseWriter, r *http.Request) {
@@ -195,7 +195,7 @@ func (h *TaskHandler) Fork(w http.ResponseWriter, r *http.Request) {
 		Description: req.Description,
 		Status:      req.Status,
 		ScheduledAt: req.ScheduledAt,
-	}, req.Repeat.toInput(req.ScheduledAt))
+	}, req.Repeat.toInput())
 	if err != nil {
 		writeUsecaseError(w, err)
 		return

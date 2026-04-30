@@ -31,6 +31,7 @@ type Repository interface {
 type Usecase interface {
 	Create(ctx context.Context, input CreateInput) (*taskdomain.Task, error)
 	GetByID(ctx context.Context, id int64) (*taskdomain.Task, error)
+	GetSeriesByID(ctx context.Context, id int64) (*Series, error)
 	Update(ctx context.Context, id int64, input UpdateInput) (*taskdomain.Task, error)
 	Delete(ctx context.Context, id int64) error
 	List(ctx context.Context) ([]taskdomain.Task, error)

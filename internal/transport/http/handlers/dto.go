@@ -27,7 +27,7 @@ func (d *jsonDate) UnmarshalJSON(b []byte) error {
 }
 
 func (d jsonDate) MarshalJSON() ([]byte, error) {
-	return []byte(`"` + d.Time.Format("2006-01-02") + `"`), nil
+	return []byte(`"` + d.Format("2006-01-02") + `"`), nil
 }
 
 type taskMutationDTO struct {
@@ -46,6 +46,7 @@ type taskDTO struct {
 	ScheduledAt *time.Time        `json:"scheduled_at,omitempty"`
 	CreatedAt   time.Time         `json:"created_at"`
 	UpdatedAt   time.Time         `json:"updated_at"`
+	Repeat      *repeatRuleDTO    `json:"repeat,omitempty"`
 }
 
 type repeatRuleDTO struct {
@@ -58,6 +59,13 @@ type repeatRuleDTO struct {
 	SpecificDates []jsonDate          `json:"specific_dates,omitempty"`
 }
 
+// occurrenceDTO carries both `date` and `scheduled_at` on purpose.
+// `date` is the canonical occurrence key (YYYY-MM-DD): it appears in URLs
+// (/tasks/{id}/occurrences/{date}), in override lookups, and is the only
+// day-bearing field when the task has no time-of-day (scheduled_at == null).
+// `scheduled_at` is the full datetime convenience: date + series' time-of-day,
+// so clients don't have to splice them together. The two overlap when
+// scheduled_at is set, but neither one alone covers both cases.
 type occurrenceDTO struct {
 	taskDTO
 	Date string `json:"date"`
@@ -68,16 +76,27 @@ type overrideDTO struct {
 	Description *string            `json:"description,omitempty"`
 	Status      *taskdomain.Status `json:"status,omitempty"`
 	ScheduledAt *time.Time         `json:"scheduled_at,omitempty"`
-	IsCancelled bool               `json:"is_cancelled,omitempty"`
 }
 
 type forkRequestDTO struct {
-	FromDate    string            `json:"from_date"`
-	Title       string            `json:"title"`
-	Description string            `json:"description"`
-	Status      taskdomain.Status `json:"status"`
-	ScheduledAt *time.Time        `json:"scheduled_at,omitempty"`
-	Repeat      *repeatRuleDTO    `json:"repeat,omitempty"`
+	FromDate    string             `json:"from_date"`
+	Title       string             `json:"title"`
+	Description string             `json:"description"`
+	Status      taskdomain.Status  `json:"status"`
+	ScheduledAt *time.Time         `json:"scheduled_at,omitempty"`
+	Repeat      *forkRepeatRuleDTO `json:"repeat,omitempty"`
+}
+
+// forkRepeatRuleDTO mirrors repeatRuleDTO but omits start_date: a fork's
+// new series always anchors at from_date, so accepting start_date here would
+// silently shadow it. end_date is allowed — a forked series can still be finite.
+type forkRepeatRuleDTO struct {
+	Type          taskdomain.RuleType `json:"type"`
+	EndDate       *jsonDate           `json:"end_date,omitempty"`
+	IntervalDays  *int                `json:"interval_days,omitempty"`
+	Weekdays      []int               `json:"weekdays,omitempty"`
+	MonthDays     []int               `json:"month_days,omitempty"`
+	SpecificDates []jsonDate          `json:"specific_dates,omitempty"`
 }
 
 func newTaskDTO(task *taskdomain.Task) taskDTO {
@@ -90,6 +109,34 @@ func newTaskDTO(task *taskdomain.Task) taskDTO {
 		CreatedAt:   task.CreatedAt,
 		UpdatedAt:   task.UpdatedAt,
 	}
+}
+
+func newSeriesDTO(ser *taskusecase.Series) taskDTO {
+	dto := newTaskDTO(&ser.Task)
+	if ser.Rule != nil {
+		dto.Repeat = newRepeatRuleDTO(ser.Rule)
+	}
+	return dto
+}
+
+func newRepeatRuleDTO(rule *taskdomain.RepeatRule) *repeatRuleDTO {
+	dto := &repeatRuleDTO{
+		Type:         rule.Type,
+		StartDate:    &jsonDate{Time: rule.StartDate},
+		IntervalDays: rule.IntervalDays,
+		Weekdays:     rule.Weekdays,
+		MonthDays:    rule.MonthDays,
+	}
+	if rule.EndDate != nil {
+		dto.EndDate = &jsonDate{Time: *rule.EndDate}
+	}
+	if len(rule.SpecificDates) > 0 {
+		dto.SpecificDates = make([]jsonDate, len(rule.SpecificDates))
+		for i, d := range rule.SpecificDates {
+			dto.SpecificDates[i] = jsonDate{Time: d}
+		}
+	}
+	return dto
 }
 
 func newOccurrenceDTO(occ *taskdomain.Occurrence) occurrenceDTO {
@@ -127,12 +174,34 @@ func (d *repeatRuleDTO) toInput(scheduledAt *time.Time) *taskusecase.RepeatInput
 	return in
 }
 
+func (d *forkRepeatRuleDTO) toInput() *taskusecase.RepeatInput {
+	if d == nil {
+		return nil
+	}
+	in := &taskusecase.RepeatInput{
+		Type:         d.Type,
+		IntervalDays: d.IntervalDays,
+		Weekdays:     d.Weekdays,
+		MonthDays:    d.MonthDays,
+	}
+	if d.EndDate != nil {
+		end := d.EndDate.Time
+		in.EndDate = &end
+	}
+	if len(d.SpecificDates) > 0 {
+		in.SpecificDates = make([]time.Time, len(d.SpecificDates))
+		for i, sd := range d.SpecificDates {
+			in.SpecificDates[i] = sd.Time
+		}
+	}
+	return in
+}
+
 func (d *overrideDTO) toInput() taskusecase.OverrideInput {
 	return taskusecase.OverrideInput{
 		Title:       d.Title,
 		Description: d.Description,
 		Status:      d.Status,
 		ScheduledAt: d.ScheduledAt,
-		IsCancelled: d.IsCancelled,
 	}
 }

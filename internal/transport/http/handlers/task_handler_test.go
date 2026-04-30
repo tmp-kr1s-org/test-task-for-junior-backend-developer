@@ -23,9 +23,10 @@ import (
 
 // stubUsecase is a hand-rolled mock of taskusecase.Usecase configured per test.
 type stubUsecase struct {
-	createFn func(ctx context.Context, in taskusecase.CreateInput) (*taskdomain.Task, error)
-	getFn    func(ctx context.Context, id int64) (*taskdomain.Task, error)
-	updateFn func(ctx context.Context, id int64, in taskusecase.UpdateInput) (*taskdomain.Task, error)
+	createFn       func(ctx context.Context, in taskusecase.CreateInput) (*taskdomain.Task, error)
+	getFn          func(ctx context.Context, id int64) (*taskdomain.Task, error)
+	getSeriesFn    func(ctx context.Context, id int64) (*taskusecase.Series, error)
+	updateFn       func(ctx context.Context, id int64, in taskusecase.UpdateInput) (*taskdomain.Task, error)
 	deleteFn func(ctx context.Context, id int64) error
 	listFn   func(ctx context.Context) ([]taskdomain.Task, error)
 
@@ -83,6 +84,21 @@ func (s *stubUsecase) GetByID(ctx context.Context, id int64) (*taskdomain.Task, 
 		return nil, errors.New("getFn not set")
 	}
 	return s.getFn(ctx, id)
+}
+
+func (s *stubUsecase) GetSeriesByID(ctx context.Context, id int64) (*taskusecase.Series, error) {
+	s.getCalls.Add(1)
+	if s.getSeriesFn != nil {
+		return s.getSeriesFn(ctx, id)
+	}
+	if s.getFn != nil {
+		t, err := s.getFn(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		return &taskusecase.Series{Task: *t}, nil
+	}
+	return nil, errors.New("getSeriesFn not set")
 }
 
 func (s *stubUsecase) Update(ctx context.Context, id int64, in taskusecase.UpdateInput) (*taskdomain.Task, error) {

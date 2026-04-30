@@ -63,6 +63,14 @@ func (s *Service) GetByID(ctx context.Context, id int64) (*taskdomain.Task, erro
 	return s.repo.GetByID(ctx, id)
 }
 
+func (s *Service) GetSeriesByID(ctx context.Context, id int64) (*Series, error) {
+	if id <= 0 {
+		return nil, fmt.Errorf("%w: id must be positive", ErrInvalidInput)
+	}
+
+	return s.repo.GetSeriesByTaskID(ctx, id)
+}
+
 func (s *Service) Update(ctx context.Context, id int64, input UpdateInput) (*taskdomain.Task, error) {
 	if id <= 0 {
 		return nil, fmt.Errorf("%w: id must be positive", ErrInvalidInput)
@@ -229,11 +237,12 @@ func (s *Service) ForkSeries(ctx context.Context, taskID int64, fromDate time.Ti
 		copyRule.EndDate = nil
 		newRule = &copyRule
 	} else {
-		built, err := buildRule(rule, normalized.ScheduledAt)
+		ruleCopy := *rule
+		ruleCopy.StartDate = truncateToDay(fromDate)
+		built, err := buildRule(&ruleCopy, normalized.ScheduledAt)
 		if err != nil {
 			return nil, err
 		}
-		built.StartDate = truncateToDay(fromDate)
 		newRule = built
 	}
 

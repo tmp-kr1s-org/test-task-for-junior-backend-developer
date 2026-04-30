@@ -16,7 +16,7 @@ func (r *Repository) CreateWithRepeat(ctx context.Context, task *taskdomain.Task
 	if err != nil {
 		return nil, nil, err
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	created, err := insertTaskTx(ctx, tx, task)
 	if err != nil {
@@ -107,7 +107,7 @@ func (r *Repository) ForkSeries(ctx context.Context, taskID int64, fromDate time
 	if err != nil {
 		return nil, nil, err
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	end := fromDate.AddDate(0, 0, -1)
 	tag, err := tx.Exec(ctx,

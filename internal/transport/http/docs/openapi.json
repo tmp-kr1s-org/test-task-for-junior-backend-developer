@@ -287,7 +287,102 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/ForkRequest" }
+              "schema": { "$ref": "#/components/schemas/ForkRequest" },
+              "examples": {
+                "daily_every_2": {
+                  "summary": "Fork to daily, every 2 days",
+                  "value": {
+                    "from_date": "2026-05-05",
+                    "title": "Standup",
+                    "description": "Daily sync",
+                    "status": "new",
+                    "scheduled_at": "2026-05-05T09:00:00Z",
+                    "repeat": {
+                      "type": "daily",
+                      "interval_days": 2,
+                      "end_date": "2026-06-30"
+                    }
+                  }
+                },
+                "weekly_mon_wed_fri": {
+                  "summary": "Fork to weekly: Mon/Wed/Fri",
+                  "value": {
+                    "from_date": "2026-05-04",
+                    "title": "Gym",
+                    "description": "",
+                    "status": "new",
+                    "scheduled_at": "2026-05-04T18:00:00Z",
+                    "repeat": {
+                      "type": "weekly",
+                      "weekdays": [1, 3, 5]
+                    }
+                  }
+                },
+                "monthly_1_and_15": {
+                  "summary": "Fork to monthly on 1st and 15th",
+                  "value": {
+                    "from_date": "2026-06-01",
+                    "title": "Payroll check",
+                    "description": "",
+                    "status": "new",
+                    "scheduled_at": "2026-06-01T10:00:00Z",
+                    "repeat": {
+                      "type": "monthly",
+                      "month_days": [1, 15]
+                    }
+                  }
+                },
+                "specific_dates": {
+                  "summary": "Fork to specific dates only",
+                  "value": {
+                    "from_date": "2026-05-12",
+                    "title": "Conference talks",
+                    "description": "",
+                    "status": "new",
+                    "repeat": {
+                      "type": "specific_dates",
+                      "specific_dates": ["2026-05-12", "2026-05-13", "2026-05-14"]
+                    }
+                  }
+                },
+                "even_days": {
+                  "summary": "Fork to even calendar days",
+                  "value": {
+                    "from_date": "2026-05-02",
+                    "title": "Watering",
+                    "description": "",
+                    "status": "new",
+                    "scheduled_at": "2026-05-02T07:00:00Z",
+                    "repeat": {
+                      "type": "even_days"
+                    }
+                  }
+                },
+                "odd_days_with_end": {
+                  "summary": "Fork to odd calendar days, with end_date",
+                  "value": {
+                    "from_date": "2026-05-03",
+                    "title": "Meds",
+                    "description": "",
+                    "status": "new",
+                    "scheduled_at": "2026-05-03T08:00:00Z",
+                    "repeat": {
+                      "type": "odd_days",
+                      "end_date": "2026-06-30"
+                    }
+                  }
+                },
+                "no_repeat_change": {
+                  "summary": "Fork without changing the rule (inherits old series)",
+                  "value": {
+                    "from_date": "2026-05-05",
+                    "title": "Standup (renamed)",
+                    "description": "Daily sync",
+                    "status": "new",
+                    "scheduled_at": "2026-05-05T09:00:00Z"
+                  }
+                }
+              }
             }
           }
         },
@@ -356,7 +451,12 @@
           "status": { "type": "string", "enum": ["new", "in_progress", "done"], "example": "new" },
           "scheduled_at": { "type": "string", "format": "date-time", "nullable": true, "example": "2026-04-25T09:00:00Z" },
           "created_at": { "type": "string", "format": "date-time", "example": "2026-03-24T00:00:00Z" },
-          "updated_at": { "type": "string", "format": "date-time", "example": "2026-03-24T00:00:00Z" }
+          "updated_at": { "type": "string", "format": "date-time", "example": "2026-03-24T00:00:00Z" },
+          "repeat": {
+            "description": "Recurrence rule attached to this task; present only on GET /tasks/{id} when the task is recurring.",
+            "allOf": [{ "$ref": "#/components/schemas/RepeatRule" }],
+            "nullable": true
+          }
         }
       },
       "RepeatRule": {
@@ -513,13 +613,12 @@
       },
       "Override": {
         "type": "object",
-        "description": "All fields are optional. Null/missing means inherit from series. `is_cancelled=true` is a tombstone for that day.",
+        "description": "All fields are optional. Null/missing means inherit from series. To cancel a single occurrence use DELETE /api/v1/tasks/{id}/occurrences/{date}.",
         "properties": {
           "title": { "type": "string", "nullable": true },
           "description": { "type": "string", "nullable": true },
           "status": { "type": "string", "enum": ["new", "in_progress", "done"], "nullable": true },
-          "scheduled_at": { "type": "string", "format": "date-time", "nullable": true },
-          "is_cancelled": { "type": "boolean" }
+          "scheduled_at": { "type": "string", "format": "date-time", "nullable": true }
         }
       },
       "ForkRequest": {
@@ -531,7 +630,103 @@
           "description": { "type": "string" },
           "status": { "type": "string", "enum": ["new", "in_progress", "done"] },
           "scheduled_at": { "type": "string", "format": "date-time", "nullable": true },
-          "repeat": { "$ref": "#/components/schemas/RepeatRule" }
+          "repeat": { "$ref": "#/components/schemas/ForkRepeatRule" }
+        }
+      },
+      "ForkRepeatRule": {
+        "description": "Same as RepeatRule but `start_date` is omitted: the new series always anchors at `from_date`.",
+        "oneOf": [
+          { "$ref": "#/components/schemas/ForkRepeatDaily" },
+          { "$ref": "#/components/schemas/ForkRepeatWeekly" },
+          { "$ref": "#/components/schemas/ForkRepeatMonthly" },
+          { "$ref": "#/components/schemas/ForkRepeatSpecificDates" },
+          { "$ref": "#/components/schemas/ForkRepeatEvenDays" },
+          { "$ref": "#/components/schemas/ForkRepeatOddDays" }
+        ],
+        "discriminator": {
+          "propertyName": "type",
+          "mapping": {
+            "daily": "#/components/schemas/ForkRepeatDaily",
+            "weekly": "#/components/schemas/ForkRepeatWeekly",
+            "monthly": "#/components/schemas/ForkRepeatMonthly",
+            "specific_dates": "#/components/schemas/ForkRepeatSpecificDates",
+            "even_days": "#/components/schemas/ForkRepeatEvenDays",
+            "odd_days": "#/components/schemas/ForkRepeatOddDays"
+          }
+        }
+      },
+      "ForkRepeatDaily": {
+        "type": "object",
+        "required": ["type", "interval_days"],
+        "additionalProperties": false,
+        "properties": {
+          "type": { "type": "string", "enum": ["daily"] },
+          "end_date": { "type": "string", "format": "date", "nullable": true },
+          "interval_days": { "type": "integer", "minimum": 1, "example": 2 }
+        }
+      },
+      "ForkRepeatWeekly": {
+        "type": "object",
+        "required": ["type", "weekdays"],
+        "additionalProperties": false,
+        "properties": {
+          "type": { "type": "string", "enum": ["weekly"] },
+          "end_date": { "type": "string", "format": "date", "nullable": true },
+          "weekdays": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "integer", "minimum": 1, "maximum": 7 },
+            "description": "1=Mon..7=Sun",
+            "example": [1, 3, 5]
+          }
+        }
+      },
+      "ForkRepeatMonthly": {
+        "type": "object",
+        "required": ["type", "month_days"],
+        "additionalProperties": false,
+        "properties": {
+          "type": { "type": "string", "enum": ["monthly"] },
+          "end_date": { "type": "string", "format": "date", "nullable": true },
+          "month_days": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "integer", "minimum": 1, "maximum": 30 },
+            "example": [1, 15]
+          }
+        }
+      },
+      "ForkRepeatSpecificDates": {
+        "type": "object",
+        "required": ["type", "specific_dates"],
+        "additionalProperties": false,
+        "properties": {
+          "type": { "type": "string", "enum": ["specific_dates"] },
+          "end_date": { "type": "string", "format": "date", "nullable": true },
+          "specific_dates": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "format": "date" },
+            "example": ["2026-05-12", "2026-05-13"]
+          }
+        }
+      },
+      "ForkRepeatEvenDays": {
+        "type": "object",
+        "required": ["type"],
+        "additionalProperties": false,
+        "properties": {
+          "type": { "type": "string", "enum": ["even_days"] },
+          "end_date": { "type": "string", "format": "date", "nullable": true }
+        }
+      },
+      "ForkRepeatOddDays": {
+        "type": "object",
+        "required": ["type"],
+        "additionalProperties": false,
+        "properties": {
+          "type": { "type": "string", "enum": ["odd_days"] },
+          "end_date": { "type": "string", "format": "date", "nullable": true }
         }
       },
       "Error": {
